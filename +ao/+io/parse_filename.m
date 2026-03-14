@@ -31,7 +31,11 @@ function info = parse_filename(filename)
         return;
     end
 
-    info.hemisphere = upper(tok.hemi);
+    if isfield(tok, 'hemi')
+        info.hemisphere = upper(tok.hemi);
+    else
+        info.hemisphere = '';
+    end
     info.trajectory = str2double(tok.traj);
     info.depth_mm   = str2double(tok.depth);
     info.file_index = str2double(tok.fidx);
