@@ -183,15 +183,7 @@ function out_pdf = ao_report(case_dir, varargin)
     end
 
     % =====================================================================
-    % 6. NRMS COMPUTATION
-    % =====================================================================
-    baseline_rms = median(mer_rms(non_imp), 'omitnan');
-    if baseline_rms > 0
-        nrms(non_imp) = mer_rms(non_imp) / baseline_rms;
-    end
-
-    % =====================================================================
-    % 7. BUILD LFP HEATMAP MATRIX
+    % 6. BUILD LFP HEATMAP MATRIX
     % =====================================================================
     % Find reference frequency grid
     ref_freq = [];
@@ -213,7 +205,33 @@ function out_pdf = ao_report(case_dir, varargin)
     end
 
     % =====================================================================
-    % 8. GENERATE FIGURE
+    % 7. MERGE DUPLICATE DEPTHS
+    % =====================================================================
+    % When multiple recordings exist at the same depth (e.g. F0001, F0002),
+    % average their features to produce one row per unique depth.
+    % For cell arrays (traces, spikes), keep the first (longest) recording.
+    [depths_mm, nrms, mer_rms, impedance_flags, ...
+        band_power, band_std, psd_db_matrix, ...
+        time_s_cell, filtered_cell, threshold_cell, spike_times_cell, ...
+        rms_outliers, N] = merge_duplicate_depths(...
+        depths_mm, nrms, mer_rms, impedance_flags, ...
+        band_power, band_std, psd_db_matrix, ...
+        time_s_cell, filtered_cell, threshold_cell, spike_times_cell, ...
+        rms_outliers, band_names);
+
+    % Recompute non-impedance index set after merge
+    non_imp = find(~impedance_flags & isfinite(mer_rms));
+
+    % =====================================================================
+    % 8. NRMS COMPUTATION
+    % =====================================================================
+    baseline_rms = median(mer_rms(non_imp), 'omitnan');
+    if baseline_rms > 0
+        nrms(non_imp) = mer_rms(non_imp) / baseline_rms;
+    end
+
+    % =====================================================================
+    % 9. GENERATE FIGURE
     % =====================================================================
     fprintf('Generating report figure...\n');
 
@@ -301,7 +319,7 @@ function out_pdf = ao_report(case_dir, varargin)
     sgtitle(fig, title_str, 'FontSize', 12, 'FontWeight', 'bold');
 
     % =====================================================================
-    % 9. EXPORT PDF
+    % 10. EXPORT PDF
     % =====================================================================
     exportgraphics(fig, out_pdf, 'ContentType', 'vector', ...
         'Resolution', cfg.render.dpi);
@@ -321,4 +339,106 @@ function values = strip_nan_padding(data)
     else
         values = data(first_valid:last_valid);
     end
+end
+
+%% ========================================================================
+function [depths_out, nrms_out, rms_out, imp_out, ...
+    bp_out, bs_out, psd_out, ...
+    t_out, f_out, th_out, sp_out, ...
+    ol_out, N_out] = merge_duplicate_depths(...
+    depths, nrms, rms, imp_flags, ...
+    bp, bs, psd_db, ...
+    t_cell, f_cell, th_cell, sp_cell, ...
+    ol_flags, band_names)
+%MERGE_DUPLICATE_DEPTHS  Average features across same-depth segments.
+%
+%   Scalar features (RMS, band power, etc.) are averaged.
+%   Cell arrays (traces, spike times) keep the longest recording.
+%   Impedance flag is true if ANY duplicate is flagged.
+%   Outlier flag is true if ANY duplicate is flagged.
+
+    [u_depths, ~, ic] = unique(depths, 'stable');
+    M = numel(u_depths);
+
+    if M == numel(depths)
+        % No duplicates — return as-is
+        depths_out = depths;
+        nrms_out   = nrms;
+        rms_out    = rms;
+        imp_out    = imp_flags;
+        bp_out     = bp;
+        bs_out     = bs;
+        psd_out    = psd_db;
+        t_out      = t_cell;
+        f_out      = f_cell;
+        th_out     = th_cell;
+        sp_out     = sp_cell;
+        ol_out     = ol_flags;
+        N_out      = M;
+        return;
+    end
+
+    fprintf('  Merging %d segments → %d unique depths\n', numel(depths), M);
+
+    depths_out = u_depths;
+    nrms_out   = NaN(M, 1);
+    rms_out    = NaN(M, 1);
+    imp_out    = false(M, 1);
+    ol_out     = false(M, 1);
+
+    nf = size(psd_db, 2);
+    psd_out = NaN(M, nf);
+
+    t_out  = cell(M, 1);
+    f_out  = cell(M, 1);
+    th_out = cell(M, 1);
+    sp_out = cell(M, 1);
+
+    bp_out = struct();
+    bs_out = struct();
+    for b = 1:numel(band_names)
+        bp_out.(band_names{b}) = NaN(M, 1);
+        bs_out.(band_names{b}) = NaN(M, 1);
+    end
+
+    for j = 1:M
+        members = find(ic == j);
+
+        % Scalar features: nanmean across duplicates
+        rms_out(j)  = mean(rms(members), 'omitnan');
+        nrms_out(j) = mean(nrms(members), 'omitnan');
+
+        % Impedance: true if ANY member is flagged
+        imp_out(j) = any(imp_flags(members));
+        ol_out(j)  = any(ol_flags(members));
+
+        % Band power: nanmean
+        for b = 1:numel(band_names)
+            bn = band_names{b};
+            bp_out.(bn)(j) = mean(bp.(bn)(members), 'omitnan');
+            bs_out.(bn)(j) = mean(bs.(bn)(members), 'omitnan');
+        end
+
+        % PSD matrix: nanmean across rows
+        if nf > 0
+            psd_out(j, :) = mean(psd_db(members, :), 1, 'omitnan');
+        end
+
+        % Cell arrays: keep the member with the longest filtered trace
+        best = members(1);
+        best_len = 0;
+        for k = 1:numel(members)
+            m = members(k);
+            if ~isempty(f_cell{m}) && numel(f_cell{m}) > best_len
+                best_len = numel(f_cell{m});
+                best = m;
+            end
+        end
+        t_out{j}  = t_cell{best};
+        f_out{j}  = f_cell{best};
+        th_out{j} = th_cell{best};
+        sp_out{j} = sp_cell{best};
+    end
+
+    N_out = M;
 end
