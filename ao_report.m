@@ -319,23 +319,44 @@ function fig = render_trajectory_page(depths_mm, nrms, impedance_flags, ...
     fig = figure('Visible', 'off', 'PaperPositionMode', 'auto', ...
         'Units', 'inches', 'Position', [0 0 cfg.render.page_width_in cfg.render.page_height_in]);
     set(fig, 'Color', 'w');
+    set(fig, 'DefaultAxesFontSize', 9);
 
-    tl = tiledlayout(fig, 1, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
+    % --- Layout with Python column width ratios [0.35, 1.15, 1.00, 0.85] ---
+    % Python: constrained_layout with gridspec width_ratios
+    ratios = [0.35, 1.15, 1.00, 0.85];
+    total  = sum(ratios);
+
+    % Leave room for: left margin, inter-panel gaps, right margin, footer
+    % Shrink panel 3 ratio to account for colorbar taking ~5% of its width
+    margin_l = 0.06;  margin_r = 0.03;  gap = 0.05;
+    footer_h = 0.08;  top_h = 0.08;
+    body_w = 1 - margin_l - margin_r - gap * (numel(ratios) - 1);
+    body_b = footer_h;
+    body_t = 1 - top_h;
+    body_h = body_t - body_b;
+
+    col_w = ratios / total * body_w;
+    ax_positions = zeros(4, 4);  % [left bottom width height]
+    x = margin_l;
+    for c = 1:4
+        ax_positions(c, :) = [x, body_b, col_w(c), body_h];
+        x = x + col_w(c) + gap;
+    end
 
     % --- Panel 1: NRMS ---
-    ax1 = nexttile(tl);
+    ax1 = axes(fig, 'Position', ax_positions(1, :));
     ao.viz.plot_nrms_profile(ax1, depths_mm(vis_idx), nrms(vis_idx), ...
         impedance_flags(vis_idx));
 
     % --- Panel 2: Filtered MER traces ---
-    ax2 = nexttile(tl);
+    ax2 = axes(fig, 'Position', ax_positions(2, :));
     ao.viz.plot_mer_traces(ax2, depths_mm(vis_idx), ...
         time_s_cell(vis_idx), filtered_cell(vis_idx), ...
         threshold_cell(vis_idx), spike_times_cell(vis_idx), ...
         impedance_flags(vis_idx), cfg);
 
     % --- Panel 3: LFP spectral heatmap ---
-    ax3 = nexttile(tl);
+    ax3 = axes(fig, 'Position', ax_positions(3, :));
     if ~isempty(ref_freq)
         primary_band = cfg.primary_band;
         bl = [cfg.bands.(primary_band).low_hz, cfg.bands.(primary_band).high_hz];
@@ -346,13 +367,18 @@ function fig = render_trajectory_page(depths_mm, nrms, impedance_flags, ...
     end
 
     % --- Panel 4: Band power profiles ---
-    ax4 = nexttile(tl);
-    band_colors = struct('delta', [0.12 0.47 0.71], ...
-        'theta', [0.20 0.63 0.17], ...
-        'alpha', [0.17 0.63 0.17], ...
-        'beta', [0.97 0.50 0.00], ...
-        'gamma', [0.84 0.15 0.16], ...
-        'highbeta', [0.58 0.40 0.74]);
+    ax4 = axes(fig, 'Position', ax_positions(4, :));
+
+    % Python _default_band_colors(): exact hex-to-RGB conversions
+    %   delta=#3366cc  theta=#2a9d8f  alpha=#2b9348
+    %   beta=#f77f00   gamma=#d62828  highbeta=#7b2cbf
+    band_colors = struct( ...
+        'delta',    [0.200 0.400 0.800], ...
+        'theta',    [0.165 0.616 0.561], ...
+        'alpha',    [0.169 0.576 0.282], ...
+        'beta',     [0.969 0.498 0.000], ...
+        'gamma',    [0.839 0.157 0.157], ...
+        'highbeta', [0.482 0.173 0.749]);
 
     bd_arr = struct([]);
     for b = 1:numel(band_names)
@@ -368,24 +394,39 @@ function fig = render_trajectory_page(depths_mm, nrms, impedance_flags, ...
     end
     ao.viz.plot_bandpower_profile(ax4, depths_mm(vis_idx), bd_arr, cfg);
 
-    % Synchronize y-axes
+    % --- Synchronize y-axes (matching Python _depth_limits, pad=0.35) ---
     all_visible_depths = depths_mm(vis_idx);
-    yl = [min(all_visible_depths) - 0.5, max(all_visible_depths) + 0.5];
+    pad_mm = 0.35;
+    yl = [min(all_visible_depths) - pad_mm, max(all_visible_depths) + pad_mm];
     ylim(ax1, yl); ylim(ax2, yl); ylim(ax3, yl); ylim(ax4, yl);
 
-    % --- Footer: warnings (with wrapping) ---
+    % Remove y-tick labels from panels 2-4 (Python: sharey with label only on first)
+    set(ax2, 'YTickLabel', []);
+    set(ax3, 'YTickLabel', []);
+    set(ax4, 'YTickLabel', []);
+    ylabel(ax2, ''); ylabel(ax3, ''); ylabel(ax4, '');
+
+    % Add shared y-label on figure left edge (Python: fig.supylabel)
+    annotation(fig, 'textbox', [0.0 0.15 0.03 0.7], ...
+        'String', 'Depth (mm)', 'FontSize', 9, ...
+        'EdgeColor', 'none', 'Rotation', 90, ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
+        'FitBoxToText', 'off');
+
+    % --- Footer: warnings (Python wraps long text across multiple lines) ---
     if ~isempty(warnings)
-        warning_text = strjoin(warnings, '  |  ');
-        annotation(fig, 'textbox', [0.01 0.0 0.98 0.06], ...
-            'String', warning_text, 'FontSize', 5.5, ...
+        % Join with newlines instead of pipe for better wrapping
+        warning_text = strjoin(warnings, newline);
+        annotation(fig, 'textbox', [0.04 0.0 0.94 footer_h - 0.01], ...
+            'String', warning_text, 'FontSize', 6, ...
             'EdgeColor', 'none', 'Color', [0.6 0 0], ...
-            'HorizontalAlignment', 'left', 'Interpreter', 'none', ...
-            'FitBoxToText', 'off');
+            'HorizontalAlignment', 'left', 'VerticalAlignment', 'bottom', ...
+            'Interpreter', 'none', 'FitBoxToText', 'off');
     end
 
-    % --- Title ---
+    % --- Title (Python: fig.suptitle, fontsize=11) ---
     title_str = sprintf('%s  |  %s  (%d depths)', folder_name, traj_label, N);
-    sgtitle(fig, title_str, 'FontSize', 12, 'FontWeight', 'bold', ...
+    sgtitle(fig, title_str, 'FontSize', 11, 'FontWeight', 'bold', ...
         'Interpreter', 'none');
 end
 
