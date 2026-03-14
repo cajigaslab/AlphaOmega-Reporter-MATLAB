@@ -13,7 +13,7 @@ function plot_bandpower_profile(ax, depths_mm, band_data, cfg)
         ax
         depths_mm (:,1) double
         band_data (:,1) struct
-        cfg       struct %#ok<INUSA>
+        cfg       struct
     end
 
     hold(ax, 'on');
@@ -45,7 +45,14 @@ function plot_bandpower_profile(ax, depths_mm, band_data, cfg)
             'LineWidth', 1.2, 'MarkerSize', 3, 'MarkerFaceColor', col);
 
         legend_handles(end+1) = hline; %#ok<AGROW>
-        legend_entries{end+1} = bd.name; %#ok<AGROW>
+        % Include frequency range in legend if available
+        if isfield(cfg, 'bands') && isfield(cfg.bands, bd.name)
+            lo = cfg.bands.(bd.name).low_hz;
+            hi = cfg.bands.(bd.name).high_hz;
+            legend_entries{end+1} = sprintf('%s (%g-%g Hz)', bd.name, lo, hi); %#ok<AGROW>
+        else
+            legend_entries{end+1} = bd.name; %#ok<AGROW>
+        end
     end
 
     legend(ax, legend_handles, legend_entries, ...

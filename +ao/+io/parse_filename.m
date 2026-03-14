@@ -19,7 +19,14 @@ function info = parse_filename(filename)
     [~, stem, ~] = fileparts(filename);
 
     % Regex: optional leading 'i', optional hemisphere, T<n>D<depth>F<index>
-    pat = '(?i)(?:i)?(?:(?<hemi>[RL]))?T(?<traj>\d+)D(?<depth>[+-]?\d+(?:\.\d+)?)F(?<fidx>\d+)';
+    % Two-pass approach: first try with hemisphere, fall back without
+    pat_with_hemi = '^i?(?<hemi>[RL])T(?<traj>\d+)D(?<depth>[+-]?\d+(?:\.\d+)?)F(?<fidx>\d+)';
+    pat_no_hemi   = '^i?T(?<traj>\d+)D(?<depth>[+-]?\d+(?:\.\d+)?)F(?<fidx>\d+)';
+    tok = regexpi(stem, pat_with_hemi, 'names');
+    if isempty(tok)
+        tok = regexpi(stem, pat_no_hemi, 'names');
+    end
+    pat = pat_with_hemi;  % unused, kept for reference
     tok = regexp(stem, pat, 'names');
 
     if isempty(tok)
