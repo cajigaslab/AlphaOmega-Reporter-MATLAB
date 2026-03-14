@@ -1,0 +1,26 @@
+# MATLAB artifacts
+*.asv
+*.mex*
+*.slx.bak
+*.autosave
+slprj/
+codegen/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data files (except sample case)
+*.h5
+*.mat
+*.bin
+
+# Allow sample case data
+!examples/sample_case/*.mpx
+!examples/sample_case/*.xml
+!examples/sample_case/*.lsx
+
+# Output
+output/
+tmp/
+*.pdf
