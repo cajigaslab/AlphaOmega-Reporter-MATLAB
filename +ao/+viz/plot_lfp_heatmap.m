@@ -45,6 +45,6 @@ function plot_lfp_heatmap(ax, depths_mm, freq_hz, psd_db_matrix, band_limits, cf
     xlabel(ax, 'Frequency (Hz)');
     ylabel(ax, 'Depth (mm)');
     title(ax, 'Spectral Power vs Depth', 'FontSize', 10);
-    set(ax, 'YDir', 'reverse', 'FontSize', 8);
+    set(ax, 'YDir', 'normal', 'FontSize', 8);
     xlim(ax, [cfg.lfp.fmin_hz, cfg.lfp.fmax_hz]);
 end

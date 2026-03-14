@@ -86,6 +86,6 @@ function plot_mer_traces(ax, depths_mm, time_s_cell, filtered_cell, ...
     xlabel(ax, 'Time (ms)');
     ylabel(ax, 'Depth (mm)');
     title(ax, 'Filtered MER vs Depth', 'FontSize', 10);
-    set(ax, 'YDir', 'reverse', 'FontSize', 8);
+    set(ax, 'YDir', 'normal', 'FontSize', 8);
     hold(ax, 'off');
 end

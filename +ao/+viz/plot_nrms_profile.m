@@ -30,7 +30,7 @@ function plot_nrms_profile(ax, depths_mm, nrms_values, impedance_flags)
     xlabel(ax, 'NRMS');
     ylabel(ax, 'Depth (mm)');
     title(ax, 'NRMS vs Depth', 'FontSize', 10);
-    set(ax, 'YDir', 'reverse', 'FontSize', 8);
+    set(ax, 'YDir', 'normal', 'FontSize', 8);
     xlim(ax, [0, max(nrms_values(valid)) * 1.2 + 0.1]);
     hold(ax, 'off');
 end

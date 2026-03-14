@@ -54,7 +54,7 @@ function plot_bandpower_profile(ax, depths_mm, band_data, cfg)
     xlabel(ax, 'Power (dB)');
     ylabel(ax, 'Depth (mm)');
     title(ax, 'Band Power vs Depth', 'FontSize', 10);
-    set(ax, 'YDir', 'reverse', 'FontSize', 8);
+    set(ax, 'YDir', 'normal', 'FontSize', 8);
 
     % Add annotation
     text(ax, 0.02, 0.02, 'mean \pm 1 SD', ...
