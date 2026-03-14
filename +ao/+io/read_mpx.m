@@ -472,15 +472,16 @@ function str = read_null_string(data, start_idx)
     sub = data(start_idx:end);
     null_pos = find(sub == 0, 1);
     if isempty(null_pos)
-        str = char(sub);
+        str = char(sub(:)');
     else
-        str = char(sub(1:null_pos-1));
+        str = char(sub(1:null_pos-1)');
     end
     str = strtrim(str);
 end
 
 function fname = sanitize_fieldname(name)
     % Convert channel name to a valid MATLAB struct field name
+    name = char(name(:)');  % ensure char row vector
     fname = regexprep(name, '[^a-zA-Z0-9_]', '_');
     if isempty(fname) || ~isstrprop(fname(1), 'alpha')
         fname = ['ch_' fname];
