@@ -1,14 +1,19 @@
-function out_pdf = ao_report(case_dir, varargin)
+function [out_pdf, results] = ao_report(case_dir, varargin)
 %AO_REPORT  Generate an AlphaOmega MER trajectory report.
 %
 %   ao_report('/path/to/case')
 %   ao_report('/path/to/case', 'out', 'report.pdf')
 %   ao_report('/path/to/case', 'config', cfg)
+%   [pdf, results] = ao_report(...)
 %
 %   Reads all .mpx files in case_dir, computes per-depth features
 %   (RMS, PSD, band power, spike detection, impedance checks), and
 %   produces a landscape PDF report with four synchronized panels.
 %   Each trajectory (hemisphere + trajectory number) gets its own page.
+%
+%   The second output RESULTS is a struct array (one element per
+%   trajectory) containing all computed data.  It is also saved as
+%   a .mat file alongside the PDF.
 
     p = inputParser;
     addRequired(p, 'case_dir', @ischar);
@@ -50,6 +55,9 @@ function out_pdf = ao_report(case_dir, varargin)
     % =====================================================================
     [~, folder_name] = fileparts(case_dir);
     all_figs = gobjects(n_trajs, 1);
+
+    % Pre-allocate results struct array
+    results = struct([]);
 
     for ti = 1:n_trajs
         seg_idx = find(traj_idx == ti);
@@ -111,6 +119,48 @@ function out_pdf = ao_report(case_dir, varargin)
         end
         vis_idx = find(visible);
 
+        % --- Store results for this trajectory ---
+        r = struct();
+        r.trajectory      = unique_trajs{ti};
+        r.case_name       = folder_name;
+        r.depths_mm       = depths_mm;
+        r.n_depths        = N;
+
+        % MER features
+        r.mer_rms         = mer_rms;
+        r.nrms            = nrms;
+        r.kurtosis        = kurtosis_vals;
+        r.spectral_entropy = entropy_vals;
+
+        % Spike detection (per-depth cell arrays)
+        r.time_s          = time_s_cell;
+        r.filtered_mer    = filtered_cell;
+        r.threshold_uv    = threshold_cell;
+        r.spike_times_s   = spike_times_cell;
+
+        % LFP spectral
+        r.psd_freq_hz     = ref_freq;
+        r.psd_db_matrix   = psd_db_matrix;
+        r.band_power      = band_power;
+        r.band_std        = band_std;
+        r.band_names      = band_names;
+
+        % QC flags
+        r.impedance_flags = impedance_flags;
+        r.rms_outliers    = rms_outliers;
+
+        % Warnings
+        r.warnings        = traj_warnings;
+
+        % Config snapshot
+        r.config          = cfg;
+
+        if isempty(results)
+            results = r;
+        else
+            results(end+1) = r; %#ok<AGROW>
+        end
+
         % --- Generate figure ---
         fig = render_trajectory_page(depths_mm, nrms, impedance_flags, ...
             time_s_cell, filtered_cell, threshold_cell, spike_times_cell, ...
@@ -135,6 +185,14 @@ function out_pdf = ao_report(case_dir, varargin)
     end
 
     fprintf('\nReport saved: %s\n', out_pdf);
+
+    % =====================================================================
+    % 5. SAVE RESULTS TO .MAT
+    % =====================================================================
+    [pdf_dir, pdf_stem] = fileparts(out_pdf);
+    out_mat = fullfile(pdf_dir, [pdf_stem '_results.mat']);
+    save(out_mat, 'results', '-v7.3');
+    fprintf('Results saved: %s\n', out_mat);
 end
 
 %% ========================================================================
