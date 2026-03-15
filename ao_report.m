@@ -193,6 +193,11 @@ function [out_pdf, results] = ao_report(case_dir, varargin)
     out_mat = fullfile(pdf_dir, [pdf_stem '_results.mat']);
     save(out_mat, 'results', '-v7.3');
     fprintf('Results saved: %s\n', out_mat);
+
+    % Also save as HDF5 for cross-platform interoperability
+    out_h5 = fullfile(pdf_dir, [pdf_stem '_results.h5']);
+    save_results_hdf5(out_h5, results);
+    fprintf('Results saved: %s\n', out_h5);
 end
 
 %% ========================================================================
@@ -579,4 +584,101 @@ function [depths_out, nrms_out, rms_out, imp_out, ...
     end
 
     N_out = M;
+end
+
+%% ========================================================================
+%  HELPER: Save results struct to HDF5
+%  ========================================================================
+function save_results_hdf5(h5_path, results)
+    if isfile(h5_path)
+        delete(h5_path);
+    end
+
+    for ti = 1:numel(results)
+        r = results(ti);
+        grp = sprintf('/trajectory_%d', ti - 1);
+
+        % Scalar attributes
+        h5writeatt(h5_path, '/', sprintf('trajectory_%d', ti - 1), r.trajectory);
+
+        % 1-D numeric arrays
+        fields_1d = {'depths_mm', 'mer_rms', 'nrms', 'kurtosis', ...
+                     'spectral_entropy'};
+        for k = 1:numel(fields_1d)
+            fn = fields_1d{k};
+            if ~isfield(r, fn), continue; end
+            vec = r.(fn);
+            if isempty(vec), continue; end
+            h5create(h5_path, [grp '/' fn], size(vec(:)'), 'Deflate', 4);
+            h5write(h5_path, [grp '/' fn], vec(:)');
+        end
+
+        % Boolean arrays (stored as uint8)
+        bool_fields = {'impedance_flags', 'rms_outliers'};
+        for k = 1:numel(bool_fields)
+            fn = bool_fields{k};
+            if ~isfield(r, fn), continue; end
+            vec = uint8(r.(fn));
+            h5create(h5_path, [grp '/' fn], size(vec(:)'), ...
+                     'Datatype', 'uint8', 'Deflate', 4);
+            h5write(h5_path, [grp '/' fn], vec(:)');
+        end
+
+        % PSD matrix and freq
+        if isfield(r, 'psd_freq_hz') && ~isempty(r.psd_freq_hz)
+            h5create(h5_path, [grp '/psd_freq_hz'], size(r.psd_freq_hz(:)'), 'Deflate', 4);
+            h5write(h5_path, [grp '/psd_freq_hz'], r.psd_freq_hz(:)');
+        end
+        if isfield(r, 'psd_db_matrix') && ~isempty(r.psd_db_matrix)
+            h5create(h5_path, [grp '/psd_db_matrix'], size(r.psd_db_matrix), 'Deflate', 4);
+            h5write(h5_path, [grp '/psd_db_matrix'], r.psd_db_matrix);
+        end
+
+        % Band power and std structs
+        if isfield(r, 'band_power') && isstruct(r.band_power)
+            bp_grp = [grp '/band_power'];
+            bs_grp = [grp '/band_std'];
+            band_names = fieldnames(r.band_power);
+            for k = 1:numel(band_names)
+                bn = band_names{k};
+                vec = r.band_power.(bn);
+                h5create(h5_path, [bp_grp '/' bn], size(vec(:)'), 'Deflate', 4);
+                h5write(h5_path, [bp_grp '/' bn], vec(:)');
+                if isfield(r, 'band_std') && isstruct(r.band_std) && isfield(r.band_std, bn)
+                    sv = r.band_std.(bn);
+                    h5create(h5_path, [bs_grp '/' bn], size(sv(:)'), 'Deflate', 4);
+                    h5write(h5_path, [bs_grp '/' bn], sv(:)');
+                end
+            end
+        end
+
+        % Variable-length cell arrays — each depth stored as a separate dataset
+        vlen_fields = {'time_s', 'filtered_mer', 'spike_times_s', 'threshold_uv'};
+        for k = 1:numel(vlen_fields)
+            fn = vlen_fields{k};
+            if ~isfield(r, fn) || ~iscell(r.(fn)), continue; end
+            cell_data = r.(fn);
+            for d = 1:numel(cell_data)
+                ds_name = sprintf('%s/%s/depth_%03d', grp, fn, d);
+                vec = cell_data{d};
+                if isempty(vec)
+                    h5create(h5_path, ds_name, [1 0]);
+                else
+                    vec = double(vec(:)');
+                    h5create(h5_path, ds_name, size(vec), 'Deflate', 4);
+                    h5write(h5_path, ds_name, vec);
+                end
+            end
+        end
+
+        % Metadata attributes
+        h5writeatt(h5_path, grp, 'n_depths', r.n_depths);
+        h5writeatt(h5_path, grp, 'trajectory', r.trajectory);
+        if isfield(r, 'case_name')
+            h5writeatt(h5_path, grp, 'case_name', r.case_name);
+        end
+        if isfield(r, 'warnings') && ~isempty(r.warnings)
+            h5writeatt(h5_path, grp, 'warnings', strjoin(r.warnings, ' | '));
+        end
+    end
 end
